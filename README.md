@@ -13,8 +13,7 @@ Work in progress.
 - [x] Bootstrap confidence intervals, per-segment analysis, model-selection analysis
 - [x] Docker image for the foundation models (CPU)
 - [x] LangGraph agent, first version (deterministic nodes, template explanations checked by a number validator)
-- [ ] Calibrate the agent's switching rule on the saved results
-- [ ] Second dataset (German hourly electricity load, SMARD)
+- [x] Calibration of the agent's switching rule on the saved results (no threshold setting beat always using the default)- [ ] Second dataset (German hourly electricity load, SMARD)
 - [ ] Streamlit demo
 - [ ] LLM narrator (optional)
 - [ ] German README
@@ -35,6 +34,7 @@ M5 (Walmart), random sample of 500 series, 8 rolling windows of 28 days. Lower M
 - Averaged over windows, TimesFM has a slightly lower mean MASE than LightGBM (difference 0.006, 95% bootstrap CI 0.001 to 0.011), yet LightGBM has the lower MASE on 63% of the series: it loses on average because of a minority of series where its error is larger.
 - Interval calibration: Chronos-2 is closest to the nominal 0.80 (0.786), TimesFM is at 0.831 and LightGBM's intervals are too wide (0.891).
 - Choosing a model per series from past backtest windows did **not** beat always using TimesFM: the MASE was higher by 0.022, 0.012 and 0.009 when 1, 3 or 7 past windows were used (the 95% intervals exclude zero). The best fixed model was picked on the same data, which favours the fixed policy.
+- Calibration of the agent's switching rule (windows 4 to 7, 500 series, the rule sees only earlier windows): 20 threshold pairs were tried, and for none of them was the 95% bootstrap interval of the difference to "always TimesFM" entirely below zero (the criterion was fixed before looking at the results). All differences were within 0.0011 MASE of the default (MASE 0.787). Choosing the best past model without thresholds gave +0.0017 (95% CI -0.0021 to +0.0053). The interval width of about 0.003 MASE means that smaller effects cannot be detected.
 - Cost on a laptop CPU (Intel i9, inside Docker), 8 windows x 500 series: 10 s for seasonal naive, 155 s for LightGBM (including retraining), 546 s for Chronos-2 and 748 s for TimesFM 3.0.
 
 Caveats: one dataset and one random sample (seed 0); the foundation models may have seen M5 during pretraining, which cannot be verified; the intervals reflect variation across series, not across time; the segment analysis for short series rests on about 15 series and is not reported.
@@ -46,7 +46,7 @@ profile_series -> plan_models -> run_backtests -> decide_model -> explain -> val
                                                                                  \-> fallback -> end
 ```
 
-- `decide_model` is deterministic and conservative: the default model (TimesFM 3.0) is kept unless a challenger is better in at least 75% of the windows, lowers the mean MASE by at least 0.05, and at least 4 windows exist. These thresholds are starting values and are not calibrated yet.
+- `decide_model` is deterministic and conservative: the default model (TimesFM 3.0) is kept unless a challenger is better in at least 75% of the windows, lowers the mean MASE by at least 0.05, and at least 4 windows exist. The thresholds were checked on the saved results (see above): no setting measurably improved accuracy over always using the default, so they were kept as they are; with them the rule switches in 4.65% of the cases.
 - `validate` checks that every number in the explanation matches a number computed by code; otherwise the agent falls back to a template text. It checks that a number exists in the facts, not that the sentence uses it correctly.
 - The agent currently reads the saved benchmark results; running the backtests live is not implemented yet. There is no LLM in the loop yet.
 
@@ -89,6 +89,7 @@ Analysis and agent (no Docker needed; the saved results are in `results/`):
 ```bash
 uv run python scripts/analyze_results.py --prefix results/m5_n500_w8 --n-series 500 --n-windows 8
 uv run python scripts/analyze_selection.py --prefix results/m5_n500_w8 --lookbacks 1 3 7
+uv run python scripts/calibrate_rule.py --prefix results/m5_n500_w8
 uv run python scripts/run_agent.py --series FOODS_1_002_WI_1
 ```
 
